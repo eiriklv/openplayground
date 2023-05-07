@@ -297,7 +297,9 @@ class GlobalStateManager:
         )
         logger.info(f"Received inference request {inference_request.model_provider}")
 
-        if inference_request.model_provider == "openai":
+        if inference_request.model_provider == "llama":
+            return self.inference_manager.llama_text_generation(provider_details, inference_request)
+        elif inference_request.model_provider == "openai":
             return self.inference_manager.openai_text_generation(provider_details, inference_request)
         elif inference_request.model_provider == "cohere":
             return self.inference_manager.cohere_text_generation(provider_details, inference_request)

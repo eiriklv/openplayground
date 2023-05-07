@@ -11,6 +11,11 @@ export const styleMap = {
   };
   
   export const styles = {
+    llama: {
+      transition: "background-color 0.2s ease-in-out",
+      backgroundColor: "#48f1f4",
+      padding: "2px 0",
+    },
     openai: {
       transition: "background-color 0.2s ease-in-out",
       backgroundColor: "#b9eebc",
@@ -53,6 +58,8 @@ export const styleMap = {
   export function getDecoratedStyle(provider: string, showHighlights: boolean) {
     if (showHighlights === false) return styles.default;
     switch (provider) {
+      case "llama":
+        return styles.llama;
       case "openai":
         return styles.openai;
       case "huggingface-local":

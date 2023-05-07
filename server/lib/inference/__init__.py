@@ -200,6 +200,7 @@ class InferenceManager:
     
     def __openai_chat_generation__(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
         openai.api_key = provider_details.api_key
+        openai.api_base = "https://api.openai.com/v1";
 
         current_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -227,6 +228,66 @@ class InferenceManager:
         cancelled = False
 
         for event in response:
+            print(event)
+            response = event['choices'][0]
+            if response['finish_reason'] == "stop":
+                break
+
+            delta = response['delta']
+
+            if "content" not in delta:
+                continue
+
+            generated_token = delta["content"]
+            tokens += generated_token
+
+            infer_response = InferenceResult(
+                uuid=inference_request.uuid,
+                model_name=inference_request.model_name,
+                model_tag=inference_request.model_tag,
+                model_provider=inference_request.model_provider,
+                token=generated_token,
+                probability=None,
+                top_n_distribution=None
+             )
+
+            if cancelled: continue
+
+            if not self.announcer.announce(infer_response, event="infer"):
+                cancelled = True
+                logger.info(f"Cancelled inference for {inference_request.uuid} - {inference_request.model_name}")
+    
+    def __llama_chat_generation__(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
+        openai.api_key = provider_details.api_key
+        openai.api_base = "http://localhost:443/v1"
+
+        current_date = datetime.now().strftime("%Y-%m-%d")
+
+        if inference_request.model_name == "gpt-4":
+            system_content = "You are GPT-4, a large language model trained by OpenAI. Answer as concisely as possible"
+        else:
+            system_content = f"You are ChatGPT, a large language model trained by OpenAI. Answer as concisely as possible. Knowledge cutoff: 2021-09-01 Current date: {current_date}"
+
+        response = openai.ChatCompletion.create(
+             model=inference_request.model_name,
+             messages = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": inference_request.prompt},
+            ],
+            temperature=inference_request.model_parameters['temperature'],
+            max_tokens=inference_request.model_parameters['maximumLength'],
+            top_p=inference_request.model_parameters['topP'],
+            frequency_penalty=inference_request.model_parameters['frequencyPenalty'],
+            presence_penalty=inference_request.model_parameters['presencePenalty'],
+            stream=True,
+            timeout=60
+        )
+
+        tokens = ""
+        cancelled = False
+
+        for event in response:
+            print(event)
             response = event['choices'][0]
             if response['finish_reason'] == "stop":
                 break
@@ -257,6 +318,7 @@ class InferenceManager:
 
     def __openai_text_generation__(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
         openai.api_key = provider_details.api_key
+        openai.api_base = "https://api.openai.com/v1"
 
         response = openai.Completion.create(
             model=inference_request.model_name,
@@ -273,6 +335,78 @@ class InferenceManager:
         cancelled = False
 
         for event in response:
+            print(event)
+            generated_token = event['choices'][0]['text']
+            infer_response = None
+            try:
+                chosen_log_prob = 0
+                likelihood = event['choices'][0]["logprobs"]['top_logprobs'][0]
+
+                prob_dist = ProablityDistribution(
+                    log_prob_sum=0, simple_prob_sum=0, tokens={},
+                )
+
+                for token, log_prob in likelihood.items():
+                    simple_prob = round(math.exp(log_prob) * 100, 2)
+                    prob_dist.tokens[token] = [log_prob, simple_prob]
+
+                    if token == generated_token:
+                        chosen_log_prob = round(log_prob, 2)
+  
+                    prob_dist.simple_prob_sum += simple_prob
+                
+                prob_dist.tokens = dict(
+                    sorted(prob_dist.tokens.items(), key=lambda item: item[1][0], reverse=True)
+                )
+                prob_dist.log_prob_sum = chosen_log_prob
+                prob_dist.simple_prob_sum = round(prob_dist.simple_prob_sum, 2)
+             
+                infer_response = InferenceResult(
+                    uuid=inference_request.uuid,
+                    model_name=inference_request.model_name,
+                    model_tag=inference_request.model_tag,
+                    model_provider=inference_request.model_provider,
+                    token=generated_token,
+                    probability=event['choices'][0]['logprobs']['token_logprobs'][0],
+                    top_n_distribution=prob_dist
+                )
+            except IndexError:
+                infer_response = InferenceResult(
+                    uuid=inference_request.uuid,
+                    model_name=inference_request.model_name,
+                    model_tag=inference_request.model_tag,
+                    model_provider=inference_request.model_provider,
+                    token=generated_token,
+                    probability=-1,
+                    top_n_distribution=None
+                )
+
+            if cancelled: continue
+
+            if not self.announcer.announce(infer_response, event="infer"):
+                cancelled = True
+                logger.info(f"Cancelled inference for {inference_request.uuid} - {inference_request.model_name}")
+
+    def __llama_text_generation__(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
+        openai.api_key = provider_details.api_key
+        openai.api_base = "http://localhost:443/v1"
+
+        response = openai.Completion.create(
+            model=inference_request.model_name,
+            prompt=inference_request.prompt,
+            temperature=inference_request.model_parameters['temperature'],
+            max_tokens=inference_request.model_parameters['maximumLength'],
+            top_p=inference_request.model_parameters['topP'],
+            stop=None if len(inference_request.model_parameters['stopSequences']) == 0 else inference_request.model_parameters['stopSequences'],
+            frequency_penalty=inference_request.model_parameters['frequencyPenalty'],
+            presence_penalty=inference_request.model_parameters['presencePenalty'],
+            logprobs=5,
+            stream=True
+        )
+        cancelled = False
+
+        for event in response:
+            print(event)
             generated_token = event['choices'][0]['text']
             infer_response = None
             try:
@@ -330,6 +464,13 @@ class InferenceManager:
             self.__error_handler__(self.__openai_chat_generation__, provider_details, inference_request)
         else:
             self.__error_handler__(self.__openai_text_generation__, provider_details, inference_request)
+
+    def llama_text_generation(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
+        # TODO: Add a meta field to the inference so we know when a model is chat vs text
+        if inference_request.model_name in ["gpt-3.5-turbo", "gpt-4"]:
+            self.__error_handler__(self.__llama_chat_generation__, provider_details, inference_request)
+        else:
+            self.__error_handler__(self.__llama_text_generation__, provider_details, inference_request)
 
     def __cohere_text_generation__(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
         with requests.post("https://api.cohere.ai/generate",

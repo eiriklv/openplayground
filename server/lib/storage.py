@@ -71,6 +71,7 @@ class Storage:
             EventEmitter().on(event, self.__update___)
 
     def __initialize_config__(self, models_json_path: str = None):
+        print("initializing config")
         if models_json_path is None:
             models_json_path = os.path.join(APP_DIR, 'models.json')
 
@@ -127,6 +128,8 @@ class Storage:
                         for original_model_key in original_model_keys:
                             if original_model_key not in cached_model_keys:
                                 cached_models_json[cached_provider]['models'][cached_model][original_model_key] = original_models_json[cached_provider]['models'][cached_model][original_model_key]
+
+        print(models_json_path)
 
         with open(models_json_path, 'r') as f:
             return json.load(f), models_json_path
