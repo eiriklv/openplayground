@@ -259,7 +259,7 @@ class InferenceManager:
     
     def __llama_chat_generation__(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
         openai.api_key = provider_details.api_key
-        openai.api_base = "http://localhost:443/v1"
+        openai.api_base = os.environ.get('LOCAL_OPENAI_PROXY_URL')
 
         current_date = datetime.now().strftime("%Y-%m-%d")
 
@@ -389,7 +389,7 @@ class InferenceManager:
 
     def __llama_text_generation__(self, provider_details: ProviderDetails, inference_request: InferenceRequest):
         openai.api_key = provider_details.api_key
-        openai.api_base = "http://localhost:443/v1"
+        openai.api_base = os.environ.get('LOCAL_OPENAI_PROXY_URL')
 
         response = openai.Completion.create(
             model=inference_request.model_name,
