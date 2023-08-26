@@ -407,11 +407,16 @@ class InferenceManager:
 
         for event in response:
             print(event)
-            generated_token = event['choices'][0]['text']
+
+            if "text" in event['choices'][0]:
+                generated_token = event['choices'][0]['text']
+            else:
+                generated_token = ""
+
             infer_response = None
             try:
                 chosen_log_prob = 0
-                likelihood = event['choices'][0]["logprobs"]['top_logprobs'][0]
+                likelihood = {}
 
                 prob_dist = ProablityDistribution(
                     log_prob_sum=0, simple_prob_sum=0, tokens={},
@@ -438,7 +443,7 @@ class InferenceManager:
                     model_tag=inference_request.model_tag,
                     model_provider=inference_request.model_provider,
                     token=generated_token,
-                    probability=event['choices'][0]['logprobs']['token_logprobs'][0],
+                    probability=0,
                     top_n_distribution=prob_dist
                 )
             except IndexError:
